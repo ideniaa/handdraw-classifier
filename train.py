@@ -16,11 +16,16 @@ class QuickDrawDataset(Dataset):
         self.images = []
         self.labels = []
 
-        class_names = os.listdir(data_dir)
-        self.class_to_idx = {class_name: idx for idx, class_name in enumerate(class_names)}
+        # FIX: Use class_labels (fixed order from model.py) instead of os.listdir()
+        # which returns an arbitrary OS-dependent order. Using a different order here
+        # than in drawing_app.py causes every prediction to map to the wrong label.
+        self.class_to_idx = {class_name: idx for idx, class_name in enumerate(class_labels)}
 
-        for class_name in class_names:
+        for class_name in class_labels:
             class_path = os.path.join(data_dir, class_name)
+            if not os.path.isdir(class_path):
+                print(f"Warning: directory not found for class '{class_name}', skipping.")
+                continue
             for img_file in os.listdir(class_path):
                 img_path = os.path.join(class_path, img_file)
                 self.images.append(img_path)
@@ -48,14 +53,16 @@ dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
 # Training
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-num_classes = len(dataset.class_to_idx)
+num_classes = len(class_labels)
 model = SketchCNN(num_classes).to(device)
+
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # Train model
 epochs = 10
 for epoch in range(epochs):
+    total_loss = 0.0
     for images, labels in dataloader:
         images, labels = images.to(device), labels.to(device)
         optimizer.zero_grad()
@@ -63,7 +70,10 @@ for epoch in range(epochs):
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
-    print(f"Epoch {epoch+1}/{epochs}, Loss: {loss.item()}")
+        total_loss += loss.item()
+
+    avg_loss = total_loss / len(dataloader)
+    print(f"Epoch {epoch+1}/{epochs}, Avg Loss: {avg_loss:.4f}")
 
 # Save trained model
 torch.save(model.state_dict(), "quickdraw_model.pth")
